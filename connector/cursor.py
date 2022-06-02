@@ -81,18 +81,17 @@ class Cursor(MySQLCursor):
         store interpolated result from select_interpolation to
         self._selected_row_generator
         """
-        super().fetchall()
-
         table_name = re.search(r"from\s(\w+)", stmt).group(1)
 
         test_point1 = DataPoint(datetime.datetime.now(), -999)
         test_point2 = DataPoint(
             datetime.datetime.now() + datetime.timedelta(minutes=8), -1999)
 
+        # TODO if table_name not in compression_dict.keys()
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
             [test_point1, test_point2])
-        return super().execute(stmt)
+        return
 
     def _custum_create_table(self, stmt: str):
         # TODO
