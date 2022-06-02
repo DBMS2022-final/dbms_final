@@ -87,6 +87,7 @@ class Cursor(MySQLCursor):
         test_point2 = DataPoint(
             datetime.datetime.now() + datetime.timedelta(minutes=8), -1999)
 
+        # TODO if table_name not in compression_dict.keys()
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
             [test_point1, test_point2])
