@@ -1,11 +1,13 @@
 from mysql.connector.cursor import MySQLCursor
 
+from .compression import DataPoint, Compression
+
 
 class Cursor(MySQLCursor):
     def __init__(self, connection=None):
         super().__init__(connection)
         self._select_flag = False
-        pass
+        self._selected_row_generator = None
 
     def execute(self, operation: str, params=None, multi=False):
         if not operation:
@@ -17,10 +19,12 @@ class Cursor(MySQLCursor):
         stmt = operation.lower()
 
         if 'insert' in stmt:
+            self._select_flag = False
             return self._custom_insert(stmt)
         elif 'select' in stmt:
             return self._custom_select(stmt)
         else:
+            self._select_flag = False
             return super().execute(operation, params, multi)
 
     def fetchone(self):
@@ -41,12 +45,20 @@ class Cursor(MySQLCursor):
 
     def _custom_select(self, stmt: str):
         # TODO
+        # set self._select_flag = True
+        # store interpolated result from select_interpolation to
+        # self._selected_row_generator
         return super().execute(stmt)
 
     def _custom_fetchone(self):
-        # TODO
-        return super().fetchone()
+        assert self._select_flag
+
+        next_point = next(self._selected_row_generator)
+        return next_point.timestamp, next_point.value
 
     def _custom_fetchall(self):
-        # TODO
-        return super().fetchall()
+        assert self._select_flag
+
+        result = [(pnt.timestamp, pnt.value)
+                  for pnt in self._selected_row_generator]
+        return result
