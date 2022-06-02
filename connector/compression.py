@@ -1,7 +1,7 @@
 import datetime
 from typing import Optional, List
 
-from data_structure import DataPoint, Buffer
+from .data_structure import DataPoint, Buffer
 
 
 class Compression:
