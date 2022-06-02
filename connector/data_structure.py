@@ -6,6 +6,9 @@ class DataPoint:
         self.timestamp = timestamp
         self.value = value
 
+    def strftime(self):
+        return self.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+
 
 class Buffer:
     def __init__(self, archieved_point: DataPoint = None,
