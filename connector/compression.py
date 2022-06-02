@@ -19,7 +19,6 @@ class Compression:
         # TODO:
         # check slope(new_point, archived point) is safe or not
         # if slope
-        print("done")
         save_point = self.buffer.save_snapshot()
         self.buffer.push_new_point(new_point)
         return save_point
