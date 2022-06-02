@@ -1,38 +1,7 @@
 import datetime
 from typing import Optional, List
 
-
-class DataPoint:
-    def __init__(self, timestamp: datetime, value: float) -> None:
-        self.timestamp = timestamp
-        self.value = value
-
-
-class Buffer:
-    def __init__(self, archieved_point: DataPoint = None,
-                 snapshot_point: DataPoint = None,
-                 incoming_point: DataPoint = None) -> None:
-        self.archieved_point = archieved_point
-        self.snapshot_point = snapshot_point
-        self.incoming_point = incoming_point
-
-    def push_new_point(self, new_point: DataPoint) -> None:
-        """Add new point to buffer"""
-        if self.archieved_point is None:
-            self.archieved_point = new_point
-        elif self.snapshot_point is None:
-            self.snapshot_point = new_point
-        else:
-            self.incoming_point = new_point
-
-    def drop_snapshot(self) -> None:
-        self.snapshot_point = self.incoming_point
-
-    def save_snapshot(self) -> DataPoint:
-        save_point = self.snapshot_point
-        self.archieved_point = self.snapshot_point
-        self.snapshot_point = self.incoming_point
-        return save_point
+from data_structure import DataPoint, Buffer
 
 
 class Compression:
@@ -55,9 +24,20 @@ class Compression:
         return save_point
 
     def select_interpolation(self, archieved_points: List[DataPoint]):
+        assert len(archieved_points) >= 1
+
         # TODO
         # work as a generator
-        pass
+        if len(archieved_points) == 1:
+            if self.buffer.incoming_point:
+                archieved_points.append(self.buffer.incoming_point)
+            elif self.buffer.snapshot_point:
+                archieved_points.append(self.buffer.snapshot_point)
+            else:
+                yield archieved_points[0]
+
+        for pnt in archieved_points:
+            yield pnt
 
     def _calculate_slope(self, point1: DataPoint,
                          point2: DataPoint, offset=0):

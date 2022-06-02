@@ -1,6 +1,12 @@
+import datetime
+import re
+from typing import Dict
+
 from mysql.connector.cursor import MySQLCursor
 
-from .compression import DataPoint, Compression
+from .compression import Compression
+from .data_structure import DataPoint
+from .settings import Config
 
 
 class Cursor(MySQLCursor):
@@ -8,6 +14,7 @@ class Cursor(MySQLCursor):
         super().__init__(connection)
         self._select_flag = False
         self._selected_row_generator = None
+        self.compression_dict: Dict[str, Compression] = {}
 
     def execute(self, operation: str, params=None, multi=False):
         if not operation:
@@ -18,13 +25,15 @@ class Cursor(MySQLCursor):
 
         stmt = operation.lower()
 
+        self._select_flag = False
         if 'insert' in stmt:
-            self._select_flag = False
             return self._custom_insert(stmt)
         elif 'select' in stmt:
+            self._select_flag = True
             return self._custom_select(stmt)
+        elif 'create table' in stmt:
+            return self._custum_create_table(stmt)
         else:
-            self._select_flag = False
             return super().execute(operation, params, multi)
 
     def fetchone(self):
@@ -41,13 +50,34 @@ class Cursor(MySQLCursor):
 
     def _custom_insert(self, stmt: str):
         # TODO
-        return super().execute(stmt)
+        table_name = re.search(r"INTO\s(\w+)\s", stmt).group(1)
+        col_time = 'timestamp'
+        col_value = 'value'
+
+        test_point = DataPoint(datetime.datetime.now(), -999)
+
+        if table_name not in self.compression_dict.keys():
+            comp = Compression(dev_margin=Config.DEV_MARGIN,
+                               archieved_point=test_point)
+            self.compression_dict[table_name] = comp
+            point_to_be_saved = test_point
+        else:
+            comp = self.compression_dict[table_name]
+            point_to_be_saved = comp.insert_checker(test_point)
+
+        sql = (f"INSERT INTO {table_name} ({col_time}, {col_value}) VALUES "
+               f"({point_to_be_saved.timestamp}, {point_to_be_saved.value})")
+        super().execute(sql)
 
     def _custom_select(self, stmt: str):
         # TODO
         # set self._select_flag = True
         # store interpolated result from select_interpolation to
         # self._selected_row_generator
+        return super().execute(stmt)
+
+    def _custum_create_table(self, stmt: str):
+        # TODO
         return super().execute(stmt)
 
     def _custom_fetchone(self):
