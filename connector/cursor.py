@@ -124,7 +124,7 @@ class Cursor(MySQLCursor):
         """
         table_name = re.search(r"table\s(\w+)", stmt).group(1)
 
-        dev_pattern = r"dev_margin\s+?=\s+?(\d+(.\d+)?)"
+        dev_pattern = r"dev_margin\s?=\s?(\d+(.\d+)?)"
         dev_match = re.search(dev_pattern, stmt)
         if not dev_match:
             return super().execute(stmt)
