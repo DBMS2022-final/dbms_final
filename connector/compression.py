@@ -11,6 +11,7 @@ class Compression:
         self.dev_margin = dev_margin
         self.buffer = Buffer(archieved_point=archieved_point,
                              snapshot_point=snapshot_point)
+        self.time_step: Optional[datetime.timedelta] = None
         self.slope_min = None
         self.slope_max = None
 
@@ -21,6 +22,8 @@ class Compression:
             return new_point
 
         if not self.buffer.snapshot_point:
+            self.time_step = (new_point.timestamp -
+                              self.buffer.archieved_point.timestamp)
             self.buffer.push_new_point(new_point)
             self._update_slope_interval(new_point)
             return None
@@ -40,20 +43,21 @@ class Compression:
     def select_interpolation(self, specified_time, archieved_points: Tuple[DataPoint]):
         """
 
-        TODO
         work as a generator
-        1. if only one point
+        1. if only need one point
         specified_time: datetime.datetime
         archieved_points: a tuple of two Datapoints
         return: generator of DataPoint
+
+        if the next point are not stored in database
+        (i.e in buffer or only insert one point), the only one
+        point sould also be in a tuple or list.
 
         2. if a range
         specified_time: a tuple of two datetime.datetime
         archieved_points: a generator function of Datapoints
         return: generator of DataPoint
         """
-        assert len(archieved_points) >= 1
-
         if isinstance(specified_time, datetime.datetime):
             return self._select_one(specified_time, archieved_points)
         else:
@@ -62,6 +66,7 @@ class Compression:
     def _select_one(self, specified_time: datetime.datetime,
                     archieved_points: Tuple[DataPoint]):
         # TODO
+        assert len(archieved_points) >= 1
         if len(archieved_points) == 1:
             if self.buffer.snapshot_point:
                 archieved_points.append(self.buffer.snapshot_point)
@@ -74,7 +79,8 @@ class Compression:
     def _select_many(self, specified_time: Tuple[datetime.datetime],
                      archieved_points):
         # TODO
-        pass
+        for pnt in archieved_points:
+            yield pnt
 
     def _calculate_slope(self, point: DataPoint, offset=0):
         delta_value = point.value - self.buffer.archieved_point.value + offset
