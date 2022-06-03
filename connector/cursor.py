@@ -61,7 +61,7 @@ class Cursor(MySQLCursor):
         # Ryan
         # parse the value of timestamp and value
         # format of timestamp: '2022-06-02 21:17:01'
-        val_pattern = r"values\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
+        val_pattern = r"values\s+?\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
         matched = re.search(val_pattern, stmt)
 
         time_stamp = matched.group(1)
@@ -70,6 +70,8 @@ class Cursor(MySQLCursor):
             time_stamp, "%Y-%m-%d %H:%M:%S")
 
         test_point = DataPoint(input_time, val)
+
+
 
         if table_name not in self.compression_dict.keys():
             comp = Compression(dev_margin=Config.DEV_MARGIN,
@@ -122,7 +124,7 @@ class Cursor(MySQLCursor):
         """
         table_name = re.search(r"table\s(\w+)", stmt).group(1)
 
-        dev_pattern = r"dev_margin\s?=\s?(\d+(.\d+)?)"
+        dev_pattern = r"dev_margin\s+?=\s+?(\d+(.\d+)?)"
         dev_match = re.search(dev_pattern, stmt)
         if not dev_match:
             return super().execute(stmt)
@@ -155,7 +157,7 @@ class Cursor(MySQLCursor):
                   for pnt in self._selected_row_generator]
         return result
 
-    def _creat_dev_margin_table_if_not_exists(self):
+    def _create_dev_margin_table_if_not_exists(self):
         stmt_creat_table = (
             "CREATE TABLE IF NOT EXISTS dev_margin ("
             "    Id int NOT NULL AUTO_INCREMENT PRIMARY KEY,"
