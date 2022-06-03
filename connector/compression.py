@@ -1,3 +1,4 @@
+from curses import newpad
 import datetime
 from typing import Optional, Tuple
 
@@ -28,7 +29,7 @@ class Compression:
             self._update_slope_interval(new_point)
             return None
 
-        slope_incoming = self._calculate_slope(new_point)
+        slope_incoming = self._calculate_slope(new_point=new_point)
 
         if self.slope_min <= slope_incoming <= self.slope_max:
             self._update_slope_interval(new_point)
@@ -71,10 +72,19 @@ class Compression:
             if self.buffer.snapshot_point:
                 archieved_points.append(self.buffer.snapshot_point)
             else:
-                yield archieved_points[0]
+                error_message = ("only one point in the database and no data"
+                                 " in the buffer are not implemented yet.")
+                raise NotImplementedError(error_message)
 
-        for pnt in archieved_points:
-            yield pnt
+        if archieved_points[0].timestamp < archieved_points[1].timestamp:
+            old_point, new_point = archieved_points[0], archieved_points[1]
+        else:
+            old_point, new_point = archieved_points[1], archieved_points[0]
+
+        slope = self._calculate_slope(new_point=new_point, old_point=old_point)
+        delta_time = (specified_time - old_point.timestamp).total_seconds()
+        interpolation_value = slope * delta_time + old_point.value
+        yield interpolation_value
 
     def _select_many(self, specified_time: Tuple[datetime.datetime],
                      archieved_points):
@@ -82,10 +92,15 @@ class Compression:
         for pnt in archieved_points:
             yield pnt
 
-    def _calculate_slope(self, point: DataPoint, offset=0):
-        delta_value = point.value - self.buffer.archieved_point.value + offset
-        delta_time = (point.timestamp -
-                      self.buffer.archieved_point.timestamp).total_seconds()
+    def _calculate_slope(self,
+                         new_point: DataPoint, *,
+                         old_point: DataPoint = None,
+                         offset=0):
+        if not old_point:
+            old_point = self.buffer.archieved_point
+        delta_value = new_point.value - old_point.value + offset
+        delta_time = (new_point.timestamp -
+                      old_point.timestamp).total_seconds()
         return delta_value / delta_time
 
     def _update_slope_interval(self, new_point: DataPoint):
@@ -102,6 +117,8 @@ class Compression:
             self.slope_max = smax_current
 
     def _calc_current_slope_interval(self, new_point: DataPoint):
-        smin_current = self._calculate_slope(new_point, -self.dev_margin)
-        smax_current = self._calculate_slope(new_point, self.dev_margin)
+        smin_current = self._calculate_slope(
+            new_point=new_point, offset=-self.dev_margin)
+        smax_current = self._calculate_slope(
+            new_point=new_point, offset=self.dev_margin)
         return smin_current, smax_current
