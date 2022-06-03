@@ -7,6 +7,9 @@ test*
 # ignore ipynb
 *.ipynb
 
+# ignore vscode setting
+.vscode
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
