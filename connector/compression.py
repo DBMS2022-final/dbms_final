@@ -1,4 +1,3 @@
-from curses import newpad
 import datetime
 from typing import Optional, Tuple
 
@@ -84,7 +83,8 @@ class Compression:
         slope = self._calculate_slope(new_point=new_point, old_point=old_point)
         delta_time = (specified_time - old_point.timestamp).total_seconds()
         interpolation_value = slope * delta_time + old_point.value
-        yield interpolation_value
+        result_point = DataPoint(specified_time, interpolation_value)
+        yield result_point
 
     def _select_many(self, specified_time: Tuple[datetime.datetime],
                      archieved_points):
