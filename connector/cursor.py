@@ -66,9 +66,8 @@ class Cursor(MySQLCursor):
 
         time_stamp = matched.group(1)
         val = matched.group(4)
-        input_time = datetime.datetime.strptime(time_stamp, "%Y-%m-%d %H:%M:%S")
-
-
+        input_time = datetime.datetime.strptime(
+            time_stamp, "%Y-%m-%d %H:%M:%S")
 
         test_point = DataPoint(input_time, val)
 
@@ -102,14 +101,10 @@ class Cursor(MySQLCursor):
         # TODO handle if table_name not in compression_dict.keys()
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
+            datetime.datetime.now(),
             [test_point1, test_point2])
 
         return
-
-            datetime.datetime.now(),
-            (test_point1, test_point2)
-        )
-
 
     def _custum_create_table(self, stmt: str):
         """
