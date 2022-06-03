@@ -32,7 +32,7 @@ class Cursor(MySQLCursor):
             self._select_flag = True
             return self._custom_select(stmt)
         elif 'create table' in stmt:
-            return self._custum_create_table(stmt)
+            return self._custom_create_table(stmt)
         else:
             return super().execute(operation, params, multi)
 
@@ -106,7 +106,7 @@ class Cursor(MySQLCursor):
 
         return
 
-    def _custum_create_table(self, stmt: str):
+    def _custom_create_table(self, stmt: str):
         """
 
         TODO
