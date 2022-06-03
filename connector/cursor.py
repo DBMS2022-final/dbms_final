@@ -54,10 +54,23 @@ class Cursor(MySQLCursor):
         # call compression insert_checkout
         # if return value is not num
         table_name = re.search(r"into\s(\w+)\s", stmt).group(1)
+
         col_time = 'timestamp'
         col_value = 'value'
 
-        test_point = DataPoint(datetime.datetime.now(), -999)
+        # Ryan
+        # parse the value of timestamp and value
+        # format of timestamp: '2022-06-02 21:17:01'
+        val_pattern = r"values\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
+        matched = re.search(val_pattern, stmt)
+
+        time_stamp = matched.group(1)
+        val = matched.group(4)
+        input_time = datetime.datetime.strptime(time_stamp, "%Y-%m-%d %H:%M:%S")
+
+
+
+        test_point = DataPoint(input_time, val)
 
         if table_name not in self.compression_dict.keys():
             comp = Compression(dev_margin=Config.DEV_MARGIN,
@@ -75,7 +88,6 @@ class Cursor(MySQLCursor):
 
     def _custom_select(self, stmt: str):
         """
-
         TODO
         set self._select_flag = True
         store interpolated result from select_interpolation to
@@ -90,9 +102,14 @@ class Cursor(MySQLCursor):
         # TODO handle if table_name not in compression_dict.keys()
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
+            [test_point1, test_point2])
+
+        return
+
             datetime.datetime.now(),
             (test_point1, test_point2)
         )
+
 
     def _custum_create_table(self, stmt: str):
         """
@@ -100,10 +117,10 @@ class Cursor(MySQLCursor):
         TODO
         Assume that dev_margin = xxx only appears at the last part
         seperated by a comma
-        For example, 
+        For example,
         CREATE TABLE temp (
             Id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
-            timestamp DATETIME, 
+            timestamp DATETIME,
             value DOUBLE,
             dev_margin=2.5
         );
