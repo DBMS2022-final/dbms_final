@@ -71,8 +71,6 @@ class Cursor(MySQLCursor):
 
         test_point = DataPoint(input_time, val)
 
-
-
         if table_name not in self.compression_dict.keys():
             comp = Compression(dev_margin=Config.DEV_MARGIN,
                                archieved_point=test_point)
@@ -130,7 +128,7 @@ class Cursor(MySQLCursor):
             return super().execute(stmt)
 
         dev_value = float(dev_match.group(1))
-        self._creat_dev_margin_table_if_not_exists()
+        self._create_dev_margin_table_if_not_exists()
         self._insert_dev_margin(table_name, dev_value)
         self.compression_dict[table_name] = Compression(
             dev_margin=dev_value)
