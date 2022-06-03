@@ -94,8 +94,40 @@ class Cursor(MySQLCursor):
         return
 
     def _custum_create_table(self, stmt: str):
-        # TODO
-        return super().execute(stmt)
+        """
+
+        TODO
+        Assume that dev_margin = xxx only appears at the last part
+        seperated by a comma
+        For example, 
+        CREATE TABLE temp (
+            Id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            timestamp DATETIME, 
+            value DOUBLE,
+            dev_margin=2.5
+        );
+        """
+        table_name = re.search(r"table\s(\w+)", stmt).group(1)
+
+        dev_pattern = r"dev_margin\s?=\s?(\d+(.\d+)?)"
+        dev_match = re.search(dev_pattern, stmt)
+        if not dev_match:
+            return super().execute(stmt)
+
+        dev_value = float(dev_match.group(1))
+        self._creat_dev_margin_table_if_not_exists()
+        self._insert_dev_margin(table_name, dev_value)
+        self.compression_dict[table_name] = Compression(
+            dev_margin=dev_value)
+
+        previous_comma_position = dev_match.start()
+        while previous_comma_position > 0:
+            if stmt[previous_comma_position] == ',':
+                break
+            previous_comma_position -= 1
+
+        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end()]
+        super().execute(modified_stmt)
 
     def _custom_fetchone(self):
         assert self._select_flag
@@ -109,3 +141,20 @@ class Cursor(MySQLCursor):
         result = [(pnt.timestamp, pnt.value)
                   for pnt in self._selected_row_generator]
         return result
+
+    def _creat_dev_margin_table_if_not_exists(self):
+        stmt_creat_table = (
+            "CREATE TABLE IF NOT EXISTS dev_margin ("
+            "    Id int NOT NULL AUTO_INCREMENT PRIMARY KEY,"
+            "    table_name varchar(40),"
+            "    dev_margin DOUBLE"
+            ")"
+        )
+        super().execute(stmt_creat_table)
+
+    def _insert_dev_margin(self, table_name, dev_margin):
+        stmt_insert_dev = (
+            "INSERT INTO dev_margin (table_name, dev_margin) "
+            "VALUES (%s, %s);"
+        )
+        super().execute(stmt_insert_dev, (table_name, dev_margin))

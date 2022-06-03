@@ -1,3 +1,6 @@
+# ignore test file
+test*
+
 # ignore csv file
 *.csv
 
