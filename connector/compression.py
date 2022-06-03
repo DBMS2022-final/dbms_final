@@ -1,4 +1,5 @@
-from typing import Optional, List
+import datetime
+from typing import Optional, Tuple
 
 from .data_structure import DataPoint, Buffer
 
@@ -36,11 +37,31 @@ class Compression:
             self._update_slope_interval(new_point)
             return save_point
 
-    def select_interpolation(self, archieved_points: List[DataPoint]):
+    def select_interpolation(self, specified_time, archieved_points: Tuple[DataPoint]):
+        """
+
+        TODO
+        work as a generator
+        1. if only one point
+        specified_time: datetime.datetime
+        archieved_points: a tuple of two Datapoints
+        return: generator of DataPoint
+
+        2. if a range
+        specified_time: a tuple of two datetime.datetime
+        archieved_points: a generator function of Datapoints
+        return: generator of DataPoint
+        """
         assert len(archieved_points) >= 1
 
+        if isinstance(specified_time, datetime.datetime):
+            return self._select_one(specified_time, archieved_points)
+        else:
+            return self._select_many(specified_time, archieved_points)
+
+    def _select_one(self, specified_time: datetime.datetime,
+                    archieved_points: Tuple[DataPoint]):
         # TODO
-        # work as a generator
         if len(archieved_points) == 1:
             if self.buffer.snapshot_point:
                 archieved_points.append(self.buffer.snapshot_point)
@@ -49,6 +70,11 @@ class Compression:
 
         for pnt in archieved_points:
             yield pnt
+
+    def _select_many(self, specified_time: Tuple[datetime.datetime],
+                     archieved_points):
+        # TODO
+        pass
 
     def _calculate_slope(self, point: DataPoint, offset=0):
         delta_value = point.value - self.buffer.archieved_point.value + offset
