@@ -49,7 +49,6 @@ class Cursor(MySQLCursor):
             return super().fetchall()
 
     def _custom_insert(self, stmt: str):
-        # TODO
         # parse table name, first two column names
         # call compression insert_checkout
         # if return value is not num
@@ -93,6 +92,10 @@ class Cursor(MySQLCursor):
 
         store interpolated result from select_interpolation to
         self._selected_row_generator
+        """
+
+        """
+        should between be handled?
         """
         if ("<" in stmt
                 or ">" in stmt
@@ -155,10 +158,13 @@ class Cursor(MySQLCursor):
 
         test_point1 = DataPoint(datetime.datetime.now(), -999)
         test_point2 = DataPoint(
-            datetime.datetime.now() + datetime.timedelta(minutes=8), -1999)
+            datetime.datetime.now() + datetime.timedelta(minutes=8), 
+            -1999)
+
 
         # TODO if have time
         # handle if table_name not in compression_dict.keys()
+        ## why would we have to handle the table that does not exist?
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
             datetime.datetime.now(),
