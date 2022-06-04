@@ -1,12 +1,13 @@
 import datetime
 import re
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from mysql.connector.cursor import MySQLCursor
 
 from .compression import Compression
 from .data_structure import DataPoint
 from .settings import Config
+from . import stmt_parser
 
 
 class Cursor(MySQLCursor):
@@ -23,7 +24,7 @@ class Cursor(MySQLCursor):
         if not self._connection:
             raise Exception("Cursor is not connected")
 
-        stmt = operation.lower()
+        stmt = stmt_parser.preprocessing(operation)
 
         self._select_flag = False
         if 'insert' in stmt:
@@ -62,7 +63,7 @@ class Cursor(MySQLCursor):
         # format of timestamp: '2022-06-02 21:17:01'
         val_pattern = r"values\s+?\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
         matched = re.search(val_pattern, stmt)
-        
+
         if not matched:
             raise Exception("Insertion should only contain two values")
 
@@ -93,10 +94,7 @@ class Cursor(MySQLCursor):
         store interpolated result from select_interpolation to
         self._selected_row_generator
         """
-
-        """
-        should between be handled?
-        """
+        # TODO
         if ("<" in stmt
                 or ">" in stmt
                 or "where" not in stmt):
@@ -117,12 +115,13 @@ class Cursor(MySQLCursor):
             dev_margin=2.5
         );
         """
-        table_name = re.search(r"table\s(\w+)", stmt).group(1)
+        stmt_preprocess = stmt_parser.preprocessing(stmt)
+        table_name = re.search(r"table\s(\w+)", stmt_preprocess).group(1)
 
         dev_pattern = r"dev_margin\s?=\s?(\d+(.\d+)?)"
-        dev_match = re.search(dev_pattern, stmt)
+        dev_match = re.search(dev_pattern, stmt_preprocess)
         if not dev_match:
-            return super().execute(stmt)
+            return super().execute(stmt_preprocess)
 
         dev_value = float(dev_match.group(1))
         self._create_dev_margin_table_if_not_exists()
@@ -132,11 +131,12 @@ class Cursor(MySQLCursor):
 
         previous_comma_position = dev_match.start()
         while previous_comma_position > 0:
-            if stmt[previous_comma_position] == ',':
+            if stmt_preprocess[previous_comma_position] == ',':
                 break
             previous_comma_position -= 1
 
-        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end():]
+        modified_stmt = stmt_preprocess[:previous_comma_position] + \
+            stmt_preprocess[dev_match.end():]
         super().execute(modified_stmt)
 
     def _custom_fetchone(self):
@@ -147,55 +147,138 @@ class Cursor(MySQLCursor):
 
     def _custom_fetchall(self):
         assert self._select_flag
-        
-        result = [(pnt.timestamp, pnt.value) for pnt in self._selected_row_generator]
-        return result
 
+        result = [(pnt.timestamp, pnt.value)
+                  for pnt in self._selected_row_generator]
+        return result
 
     def _handle_select_one(self, stmt):
         table_name = re.search(r"from\s(\w+)", stmt).group(1)
 
         select_pattern = r"where\s+?timestamp\s+?=\s+?'((\w+-*)+\s(\w+:*)+)'"
         selected_timestamp = re.search(select_pattern, stmt).group(1)
-        
-        if not selected_timestamp:
-            raise ValueError("The format of query should be: ...where timestamp = 'Y-m-d H:M:S'")
 
-        selected_timestamp = datetime.datetime.strptime(selected_timestamp, "%Y-%m-%d %H:%M:%S")
+        if not selected_timestamp:
+            raise ValueError(
+                "The format of query should be: ...where timestamp = 'Y-m-d H:M:S'")
+
+        selected_timestamp = datetime.datetime.strptime(
+            selected_timestamp, "%Y-%m-%d %H:%M:%S")
 
         """ Query the timestamp to see if it exist in DB """
         stmt_pre_query = (
-            f"SELECT timestamp, value " 
+            f"SELECT timestamp, value "
             f"FROM {table_name} "
             f"WHERE timestamp = '{selected_timestamp}'"
-            )
-        
+        )
+
         super().execute(stmt_pre_query)
-        result_tuple = super().fetchone()  
+        result_tuple = super().fetchone()
 
         """the asked point does exist in DB"""
         if result_tuple:
-            self._selected_row_generator = (x for x in (DataPoint(*result_tuple), ))
+            self._selected_row_generator = (
+                x for x in (DataPoint(*result_tuple), ))
             return
-        
 
         """the asked point does NOT exist"""
-        lower_bound_point = self._get_closest_point('prev', table_name, selected_timestamp)
-        upper_bound_point = self._get_closest_point('next', table_name, selected_timestamp)
-
+        lower_bound_point = self._get_closest_point(
+            'prev', table_name, selected_timestamp)
+        upper_bound_point = self._get_closest_point(
+            'next', table_name, selected_timestamp)
 
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
             selected_timestamp,
             (lower_bound_point, upper_bound_point)
         )
-
         # TODO if have timeo
         # handle if table_name not in compression_dict.keys()
 
-        ### why would we have to handle the table that does not exist?
+        # why would we have to handle the table that does not exist?
 
-    def _handle_select_many(self, stmt):
+    def _handle_select_many(self, stmt: str):
+        """Handle select with a time range
+
+        case 0(no_limit): no time-related limit in where or no where clause
+        SELECT * FROM table_name
+        SELECT (timestamp, value) FROM table_name
+
+        case 1(range): WHERE with both left and right
+        SELECT * FROM table_name
+        WHERE timestamp >= '2022-06-01 08:30:01'
+        AND timestamp < '2022-06-05 21:07:11';
+
+        case 2(after): no left limit
+        SELECT (timestamp, value) FROM table_name
+        WHERE timestamp > '2022-06-01 08:30:01';
+
+        case 3(before): no right limit
+        SELECT (timestamp, value) FROM table_name
+        WHERE timestamp <= '2022-06-05 21:07:11';
+        """
+        stmt_split_where = stmt.split("where")
+        if len(stmt_split_where) > 2:
+            raise ValueError(f"Multiple where in {stmt}")
+
+        table_name = stmt_parser.get_table_name_from_select(stmt)
+        if len(stmt_split_where) == 1:  # case 0
+            return self._handle_select_no_time_limit(table_name)
+
+        stmt_after_where = stmt_split_where[1].strip()
+        time_conditions = stmt_parser.find_time_condition(stmt_after_where)
+        assert len(time_conditions) != 0
+        if len(time_conditions) > 2:
+            error_message = ("complex where clause with more than "
+                             "2 conditions about time is not support")
+            raise NotImplementedError(error_message)
+
+        if len(time_conditions) == 2:  # case 1
+            return self._handle_select_range(table_name, time_conditions)
+
+        if "<" in time_conditions:  # case 2
+            return self._handle_select_before(table_name, time_conditions[0])
+        else:  # case 3
+            return self._handle_select_after(table_name, time_conditions[0])
+
+    def _handle_select_no_time_limit(self, table_name: str):
+        # TODO: find the earliest time in database
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+
+    def _handle_select_after(self, table_name: str, time_condition: str):
+        # TODO
+        str_time = stmt_parser.get_first_time_from_string(time_condition)
+        specified_time = datetime.datetime.strptime(
+            str_time, '%Y-%m-%d %H:%M:%S')
+        next_point = self._get_closest_point(
+            'next', table_name, specified_time)
+
+        if not next_point:  # No data in the database
+            self._selected_row_generator = []
+
+        stmt_select_range = (
+            f"SELECT timestamp, value FROM {table_name} WHERE "
+            + time_condition + " ORDER BY timestamp ASC")
+        super().execute(stmt_select_range)
+
+        def points_generator(cursor):
+            row = super().fetchone()
+            while row is not None:
+                yield DataPoint(*row)
+                row = super().fetchone()
+            yield next_point
+
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            [specified_time, None], points_generator(self))
+
+    def _handle_select_before(self, table_name: str, time_condition: str):
+        # TODO: find the earliest time in database
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+
+    def _handle_select_range(self, table_name: str, time_conditions: List[str]):
         # TODO
         self._selected_row_generator = (
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
@@ -218,14 +301,13 @@ class Cursor(MySQLCursor):
         super().execute(stmt_insert_dev, (table_name, dev_margin))
         return
 
-    def _get_closest_point(
-            self, prev_or_next: str, 
-            table_name: str,
-            specified_time: datetime.datetime
-            ) -> Optional[DataPoint]:
+    def _get_closest_point(self, prev_or_next: str,
+                           table_name: str,
+                           specified_time: datetime.datetime
+                           ) -> Optional[DataPoint]:
 
         if prev_or_next == 'prev':
-            compare_sign = '<='   
+            compare_sign = '<='
             sort_order = 'DESC'
         elif prev_or_next == 'next':
             compare_sign = '>='
@@ -247,3 +329,36 @@ class Cursor(MySQLCursor):
             return DataPoint(*result_row)
         else:
             return None
+
+    def _get_data_in_range(self, table_name: str,
+                           start_time: Optional[datetime.datetime],
+                           end_time: Optional[datetime.datetime]):
+        """Return a generator in the time range
+
+        Execute a select statement and wrap fetchall in to a generator
+        start_time and end_time cannot both be None
+        """
+        assert start_time or end_time
+
+        stmt_select_range = f"SELECT timestamp, value FROM {table_name} WHERE"
+        if start_time:
+            str_start = start_time.strftime('%Y-%m-%d %H:%M:%S')
+            stmt_select_range += f"  timestamp >= '{str_start}'"
+
+        if end_time:
+            str_end = end_time.strftime('%Y-%m-%d %H:%M:%S')
+            if start_time:
+                stmt_select_range += " AND"
+            stmt_select_range += f"  timestamp <= '{str_end}'"
+
+        stmt_select_range += f"  ORDER BY timestamp ASC"
+
+        super().execute(stmt_select_range)
+
+        def point_generator(cursor):
+            row = super().fetchone()
+            while row is not None:
+                yield DataPoint(*row)
+                row = super().fetchone()
+
+        return point_generator(self)
