@@ -47,4 +47,5 @@ def get_table_name_from_select(stmt: str) -> str:
 
 
 def get_first_time_from_string(stmt: str) -> str:
-    return re.search(timestamp_pattern(), stmt).group(1)
+    result = re.findall(timestamp_pattern(), stmt)[0]
+    return result

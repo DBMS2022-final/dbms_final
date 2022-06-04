@@ -103,7 +103,8 @@ class Compression:
                 nonlocal archieved_points
                 for pnt in archieved_points:
                     yield pnt
-                yield self.buffer.snapshot_point
+                if pnt != self.buffer.snapshot_point:
+                    yield self.buffer.snapshot_point
 
             point_generator = add_point_to_tail()
         else:
@@ -113,15 +114,16 @@ class Compression:
         point_prev = next(point_generator)
         yield point_prev
 
+        working_time += self.time_step
         for point_next in point_generator:
             while working_time < point_next.timestamp:
-                working_time += self.time_step
                 if working_time > end_time:
                     return
 
                 point_result = self._calc_interpolation(
                     working_time,
                     point_start=point_prev, point_end=point_next)
+                working_time += self.time_step
                 yield point_result
 
             if working_time != point_next.timestamp:

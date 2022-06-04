@@ -171,7 +171,7 @@ class Cursor(MySQLCursor):
 
         case 0(no_limit): no time-related limit in where or no where clause
         SELECT * FROM table_name
-        SELECT (timestamp, value) FROM table_name  
+        SELECT (timestamp, value) FROM table_name
 
         case 1(range): WHERE with both left and right
         SELECT * FROM table_name
@@ -190,8 +190,9 @@ class Cursor(MySQLCursor):
         if len(stmt_split_where) > 2:
             raise ValueError(f"Multiple where in {stmt}")
 
+        table_name = stmt_parser.get_table_name_from_select(stmt)
         if len(stmt_split_where) == 1:  # case 0
-            return self._handle_select_no_time_limit(stmt)
+            return self._handle_select_no_time_limit(table_name)
 
         stmt_after_where = stmt_split_where[1].strip()
         time_conditions = stmt_parser.find_time_condition(stmt_after_where)
@@ -202,12 +203,12 @@ class Cursor(MySQLCursor):
             raise NotImplementedError(error_message)
 
         if len(time_conditions) == 2:  # case 1
-            return self._handle_select_range(stmt, time_conditions)
+            return self._handle_select_range(table_name, time_conditions)
 
         if "<" in time_conditions:  # case 2
-            return self._handle_select_before(stmt, time_conditions[0])
+            return self._handle_select_before(table_name, time_conditions[0])
         else:  # case 3
-            return self._handle_select_after(stmt, time_conditions[0])
+            return self._handle_select_after(table_name, time_conditions[0])
 
     def _handle_select_no_time_limit(self, table_name: str):
         # TODO: find the earliest time in database
@@ -223,18 +224,23 @@ class Cursor(MySQLCursor):
             'next', table_name, specified_time)
 
         if not next_point:  # No data in the database
-            return
+            self._selected_row_generator = []
 
-        def point_gen():
+        stmt_select_range = (
+            f"SELECT timestamp, value FROM {table_name} WHERE "
+            + time_condition + " ORDER BY timestamp ASC")
+        super().execute(stmt_select_range)
+
+        def points_generator(cursor):
+            row = super().fetchone()
+            while row is not None:
+                yield DataPoint(*row)
+                row = super().fetchone()
             yield next_point
 
-        # comp = self.compression_dict[table_name]
-        # self._selected_row_generator = comp.select_interpolation(
-        #     [specified_time, None], point_gen())
-
-        # TODO: find the earliest time in database
-        self._selected_row_generator = (
-            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            [specified_time, None], points_generator(self))
 
     def _handle_select_before(self, table_name: str, time_condition: str):
         # TODO: find the earliest time in database
@@ -291,3 +297,36 @@ class Cursor(MySQLCursor):
             return DataPoint(*result_row)
         else:
             return None
+
+    def _get_data_in_range(self, table_name: str,
+                           start_time: Optional[datetime.datetime],
+                           end_time: Optional[datetime.datetime]):
+        """Return a generator in the time range
+
+        Execute a select statement and wrap fetchall in to a generator
+        start_time and end_time cannot both be None
+        """
+        assert start_time or end_time
+
+        stmt_select_range = f"SELECT timestamp, value FROM {table_name} WHERE"
+        if start_time:
+            str_start = start_time.strftime('%Y-%m-%d %H:%M:%S')
+            stmt_select_range += f"  timestamp >= '{str_start}'"
+
+        if end_time:
+            str_end = end_time.strftime('%Y-%m-%d %H:%M:%S')
+            if start_time:
+                stmt_select_range += " AND"
+            stmt_select_range += f"  timestamp <= '{str_end}'"
+
+        stmt_select_range += f"  ORDER BY timestamp ASC"
+
+        super().execute(stmt_select_range)
+
+        def point_generator(cursor):
+            row = super().fetchone()
+            while row is not None:
+                yield DataPoint(*row)
+                row = super().fetchone()
+
+        return point_generator(self)
