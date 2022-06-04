@@ -130,7 +130,7 @@ class Cursor(MySQLCursor):
                 break
             previous_comma_position -= 1
 
-        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end()]
+        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end():]
         super().execute(modified_stmt)
 
     def _custom_fetchone(self):
