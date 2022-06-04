@@ -111,9 +111,12 @@ class Compression:
         else:
             point_generator = archieved_points
 
-        working_time = start_time
         point_prev = next(point_generator)
-        yield point_prev
+        if point_prev.timestamp >= start_time:
+            working_time = point_prev.timestamp
+            yield point_prev
+        else:
+            working_time = start_time - self.time_step
 
         for point_next in point_generator:
             while working_time < point_next.timestamp:
