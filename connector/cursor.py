@@ -63,6 +63,9 @@ class Cursor(MySQLCursor):
         # format of timestamp: '2022-06-02 21:17:01'
         val_pattern = r"values\s+?\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
         matched = re.search(val_pattern, stmt)
+        
+        if not matched:
+            raise Exception("Insertion should only contain two values")
 
         time_stamp = matched.group(1)
         val = float(matched.group(4))
