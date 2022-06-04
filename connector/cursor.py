@@ -156,20 +156,44 @@ class Cursor(MySQLCursor):
         # TODO
         table_name = re.search(r"from\s(\w+)", stmt).group(1)
 
-        test_point1 = DataPoint(datetime.datetime.now(), -999)
-        test_point2 = DataPoint(
-            datetime.datetime.now() + datetime.timedelta(minutes=8), 
-            -1999)
+        select_pattern = r"where\s+?timestamp\s+?=\s+?'((\w+-*)+\s(\w+:*)+)'"
+        selected_timestamp = re.search(select_pattern, stmt).group(1)
+        
+        if not selected_timestamp:
+            raise ValueError("The format of timestamp should be: 'Y-m-d H:M:S'")
 
+        selected_timestamp = datetime.datetime.strptime(selected_timestamp, "%Y-%m-%d %H:%M:%S")
+
+        """ Query the timestamp to see if it exist in DB """
+        stmt_pre_query = (
+            f"SELECT timestamp, value" 
+            f"FROM {table_name}"
+            f"WHERE timestamp = '{selected_timestamp}'"
+            )
+        
+        super().execute(stmt_pre_query)
+        result_tuple = super().fetchall()  
+
+        """the asked point does exist in DB"""
+        if result_tuple:
+            self._selected_row_generator = (x for x in (result_tuple, ))
+            return
+        
+        """the asked point does NOT exist"""
+        lower_bound_point = self._get_closest_point('prev', table_name, selected_timestamp)
+        upper_bound_point = self._get_closest_point('next', table_name, selected_timestamp)
+
+
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            selected_timestamp,
+            (lower_bound_point, upper_bound_point)
+        )
 
         # TODO if have time
         # handle if table_name not in compression_dict.keys()
-        ## why would we have to handle the table that does not exist?
-        comp = self.compression_dict[table_name]
-        self._selected_row_generator = comp.select_interpolation(
-            datetime.datetime.now(),
-            (test_point1, test_point2)
-        )
+
+        ### why would we have to handle the table that does not exist?
 
     def _handle_select_many(self, stmt):
         # TODO
@@ -195,11 +219,13 @@ class Cursor(MySQLCursor):
         return
 
     def _get_closest_point(
-            self, prev_or_next: str, table_name: str,
-            specified_time: datetime.datetime) -> Optional[DataPoint]:
+            self, prev_or_next: str, 
+            table_name: str,
+            specified_time: datetime.datetime
+            ) -> Optional[DataPoint]:
 
         if prev_or_next == 'prev':
-            compare_sign = '<='
+            compare_sign = '<='   
             sort_order = 'DESC'
         elif prev_or_next == 'next':
             compare_sign = '>='
