@@ -40,3 +40,11 @@ def find_time_condition(stmt: str) -> List[str]:
                          + timestamp_pattern() + r"\'")
     result = re.findall(condition_pattern, stmt)
     return result
+
+
+def get_table_name_from_select(stmt: str) -> str:
+    return re.search(r"from\s(\w+)", stmt).group(1)
+
+
+def get_first_time_from_string(stmt: str) -> str:
+    return re.search(timestamp_pattern(), stmt).group(1)

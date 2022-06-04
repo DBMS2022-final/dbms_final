@@ -1,6 +1,6 @@
 import datetime
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from mysql.connector.cursor import MySQLCursor
 
@@ -66,7 +66,7 @@ class Cursor(MySQLCursor):
         matched = re.search(val_pattern, stmt)
 
         time_stamp = matched.group(1)
-        val = matched.group(4)
+        val = float(matched.group(4))
         input_time = datetime.datetime.strptime(
             time_stamp, "%Y-%m-%d %H:%M:%S")
 
@@ -209,31 +209,42 @@ class Cursor(MySQLCursor):
         else:  # case 3
             return self._handle_select_after(stmt, time_conditions[0])
 
-    def _handle_select_no_time_limit(self, stmt: str):
+    def _handle_select_no_time_limit(self, table_name: str):
         # TODO: find the earliest time in database
         self._selected_row_generator = (
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
-    def _handle_select_after(self, stmt: str, time_condition: str):
+    def _handle_select_after(self, table_name: str, time_condition: str):
         # TODO
-        self._selected_row_generator = (
-            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+        str_time = stmt_parser.get_first_time_from_string(time_condition)
+        specified_time = datetime.datetime.strptime(
+            str_time, '%Y-%m-%d %H:%M:%S')
+        next_point = self._get_closest_point(
+            'next', table_name, specified_time)
 
-    def _handle_select_before(self, stmt: str, time_condition: str):
+        if not next_point:  # No data in the database
+            return
+
+        def point_gen():
+            yield next_point
+
+        # comp = self.compression_dict[table_name]
+        # self._selected_row_generator = comp.select_interpolation(
+        #     [specified_time, None], point_gen())
+
         # TODO: find the earliest time in database
         self._selected_row_generator = (
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
-    def _handle_select_range(self, stmt: str, time_conditions: List[str]):
-        # TODO
+    def _handle_select_before(self, table_name: str, time_condition: str):
+        # TODO: find the earliest time in database
         self._selected_row_generator = (
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
-    def _get_previous_saved_point(self, specified_time):
-        pass
-
-    def _get_next_saved_point(self, specified_time):
-        pass
+    def _handle_select_range(self, table_name: str, time_conditions: List[str]):
+        # TODO
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
     def _create_dev_margin_table_if_not_exists(self):
         stmt_creat_table = (
@@ -251,3 +262,32 @@ class Cursor(MySQLCursor):
             "VALUES (%s, %s);"
         )
         super().execute(stmt_insert_dev, (table_name, dev_margin))
+        return
+
+    def _get_closest_point(
+            self, prev_or_next: str, table_name: str,
+            specified_time: datetime.datetime) -> Optional[DataPoint]:
+
+        if prev_or_next == 'prev':
+            compare_sign = '<='
+            sort_order = 'DESC'
+        elif prev_or_next == 'next':
+            compare_sign = '>='
+            sort_order = 'ASC'
+        else:
+            error_message = (f"prev_or_next should be 'prev' or 'next', "
+                             f"get {prev_or_next}")
+            raise ValueError(error_message)
+
+        str_time = specified_time.strftime('%Y-%m-%d %H:%M:%S')
+        stmt_select_previous_point = (
+            f"SELECT timestamp, value FROM {table_name} "
+            f"WHERE timestamp {compare_sign} '{str_time}' "
+            f"ORDER BY timestamp {sort_order} LIMIT 1"
+        )
+        super().execute(stmt_select_previous_point)
+        result_row = super().fetchone()
+        if result_row:
+            return DataPoint(*result_row)
+        else:
+            return None
