@@ -1,12 +1,13 @@
 import datetime
 import re
-from typing import Dict
+from typing import Dict, List
 
 from mysql.connector.cursor import MySQLCursor
 
 from .compression import Compression
 from .data_structure import DataPoint
 from .settings import Config
+from . import stmt_parser
 
 
 class Cursor(MySQLCursor):
@@ -23,7 +24,7 @@ class Cursor(MySQLCursor):
         if not self._connection:
             raise Exception("Cursor is not connected")
 
-        stmt = operation.lower()
+        stmt = stmt_parser.preprocessing(operation)
 
         self._select_flag = False
         if 'insert' in stmt:
@@ -91,6 +92,7 @@ class Cursor(MySQLCursor):
         store interpolated result from select_interpolation to
         self._selected_row_generator
         """
+        # TODO
         if ("<" in stmt
                 or ">" in stmt
                 or "where" not in stmt):
@@ -111,12 +113,13 @@ class Cursor(MySQLCursor):
             dev_margin=2.5
         );
         """
-        table_name = re.search(r"table\s(\w+)", stmt).group(1)
+        stmt_preprocess = stmt_parser.preprocessing(stmt)
+        table_name = re.search(r"table\s(\w+)", stmt_preprocess).group(1)
 
         dev_pattern = r"dev_margin\s?=\s?(\d+(.\d+)?)"
-        dev_match = re.search(dev_pattern, stmt)
+        dev_match = re.search(dev_pattern, stmt_preprocess)
         if not dev_match:
-            return super().execute(stmt)
+            return super().execute(stmt_preprocess)
 
         dev_value = float(dev_match.group(1))
         self._create_dev_margin_table_if_not_exists()
@@ -126,11 +129,12 @@ class Cursor(MySQLCursor):
 
         previous_comma_position = dev_match.start()
         while previous_comma_position > 0:
-            if stmt[previous_comma_position] == ',':
+            if stmt_preprocess[previous_comma_position] == ',':
                 break
             previous_comma_position -= 1
 
-        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end():]
+        modified_stmt = stmt_preprocess[:previous_comma_position] + \
+            stmt_preprocess[dev_match.end():]
         super().execute(modified_stmt)
 
     def _custom_fetchone(self):
@@ -162,10 +166,74 @@ class Cursor(MySQLCursor):
             (test_point1, test_point2)
         )
 
-    def _handle_select_many(self, stmt):
+    def _handle_select_many(self, stmt: str):
+        """Handle select with a time range
+
+        case 0(no_limit): no time-related limit in where or no where clause
+        SELECT * FROM table_name
+        SELECT (timestamp, value) FROM table_name  
+
+        case 1(range): WHERE with both left and right
+        SELECT * FROM table_name
+        WHERE timestamp >= '2022-06-01 08:30:01'
+        AND timestamp < '2022-06-05 21:07:11';
+
+        case 2(after): no left limit
+        SELECT (timestamp, value) FROM table_name
+        WHERE timestamp > '2022-06-01 08:30:01';
+
+        case 3(before): no right limit
+        SELECT (timestamp, value) FROM table_name
+        WHERE timestamp <= '2022-06-05 21:07:11';
+        """
+        stmt_split_where = stmt.split("where")
+        if len(stmt_split_where) > 2:
+            raise ValueError(f"Multiple where in {stmt}")
+
+        if len(stmt_split_where) == 1:  # case 0
+            return self._handle_select_no_time_limit(stmt)
+
+        stmt_after_where = stmt_split_where[1].strip()
+        time_conditions = stmt_parser.find_time_condition(stmt_after_where)
+        assert len(time_conditions) != 0
+        if len(time_conditions) > 2:
+            error_message = ("complex where clause with more than "
+                             "2 conditions about time is not support")
+            raise NotImplementedError(error_message)
+
+        if len(time_conditions) == 2:  # case 1
+            return self._handle_select_range(stmt, time_conditions)
+
+        if "<" in time_conditions:  # case 2
+            return self._handle_select_before(stmt, time_conditions[0])
+        else:  # case 3
+            return self._handle_select_after(stmt, time_conditions[0])
+
+    def _handle_select_no_time_limit(self, stmt: str):
+        # TODO: find the earliest time in database
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+
+    def _handle_select_after(self, stmt: str, time_condition: str):
         # TODO
         self._selected_row_generator = (
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+
+    def _handle_select_before(self, stmt: str, time_condition: str):
+        # TODO: find the earliest time in database
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+
+    def _handle_select_range(self, stmt: str, time_conditions: List[str]):
+        # TODO
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+
+    def _get_previous_saved_point(self, specified_time):
+        pass
+
+    def _get_next_saved_point(self, specified_time):
+        pass
 
     def _create_dev_margin_table_if_not_exists(self):
         stmt_creat_table = (
