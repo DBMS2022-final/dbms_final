@@ -65,7 +65,7 @@ class Compression:
 
     def _select_one(self, specified_time: datetime.datetime,
                     archieved_points: Tuple[DataPoint]):
-        # TODO
+
         assert len(archieved_points) >= 1
         if len(archieved_points) == 1:
             if self.buffer.snapshot_point:
@@ -80,17 +80,40 @@ class Compression:
         else:
             old_point, new_point = archieved_points[1], archieved_points[0]
 
-        slope = self._calculate_slope(new_point=new_point, old_point=old_point)
-        delta_time = (specified_time - old_point.timestamp).total_seconds()
-        interpolation_value = slope * delta_time + old_point.value
-        result_point = DataPoint(specified_time, interpolation_value)
+        result_point = self._calc_interpolation(
+            specified_time, point_start=old_point, point_end=new_point)
         yield result_point
 
     def _select_many(self, specified_time: Tuple[datetime.datetime],
                      archieved_points):
-        # TODO
-        for pnt in archieved_points:
-            yield pnt
+        assert len(specified_time) == 2
+        start_time, end_time = specified_time[0], specified_time[1]
+
+        if not self.time_step:
+            error_message = f"time_step({self.time_step}) is not recorded!"
+            raise NotImplementedError(error_message)
+
+        working_time = start_time
+        point_generator = archieved_points
+        point_prev = next(point_generator)
+        yield point_prev
+
+        for point_next in point_generator:
+            while working_time < point_next.timestamp:
+                working_time += self.time_step
+                if working_time > end_time:
+                    return
+
+                point_result = self._calc_interpolation(
+                    working_time,
+                    point_start=point_prev, point_end=point_next)
+                yield point_result
+
+            if working_time != point_next.timestamp:
+                working_time = point_next.timestamp
+                yield point_next
+
+            point_prev = point_next
 
     def _calculate_slope(self,
                          new_point: DataPoint, *,
@@ -98,6 +121,14 @@ class Compression:
                          offset=0):
         if not old_point:
             old_point = self.buffer.archieved_point
+
+        if new_point == old_point:
+            error_message = (
+                f"new_point({new_point}) == old_point({old_point}),"
+                " cannot calculate slope!!"
+            )
+            raise ValueError(error_message)
+
         delta_value = new_point.value - old_point.value + offset
         delta_time = (new_point.timestamp -
                       old_point.timestamp).total_seconds()
@@ -122,3 +153,12 @@ class Compression:
         smax_current = self._calculate_slope(
             new_point=new_point, offset=self.dev_margin)
         return smin_current, smax_current
+
+    def _calc_interpolation(self, specified_time: datetime.datetime,
+                            point_start: DataPoint, point_end: DataPoint):
+        slope = self._calculate_slope(
+            new_point=point_end, old_point=point_start)
+        delta_time = (specified_time - point_start.timestamp).total_seconds()
+        interpolation_value = slope * delta_time + point_start.value
+        result_point = DataPoint(specified_time, interpolation_value)
+        return result_point
