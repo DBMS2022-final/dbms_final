@@ -61,7 +61,8 @@ class Cursor(MySQLCursor):
         # Ryan
         # parse the value of timestamp and value
         # format of timestamp: '2022-06-02 21:17:01'
-        val_pattern = r"values\s+?\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
+        # val_pattern = r"values\s+?\('((\w+-*)+\s(\w+:*)+)',\s?(\W?\w+)\)"
+        val_pattern = r"values\s+?\('((\w+-*)+\s(\w+:*)+)',\s?(-?\d+(.\d+)?)\)"
         matched = re.search(val_pattern, stmt)
 
         if not matched:
@@ -267,7 +268,8 @@ class Cursor(MySQLCursor):
             while row is not None:
                 yield DataPoint(*row)
                 row = super().fetchone()
-            yield next_point
+            if next_point.timestamp != specified_time:
+                yield next_point
 
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
@@ -280,8 +282,43 @@ class Cursor(MySQLCursor):
 
     def _handle_select_range(self, table_name: str, time_conditions: List[str]):
         # TODO
-        self._selected_row_generator = (
-            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+        assert len(time_conditions) == 2
+
+        str_start = stmt_parser.get_first_time_from_string(time_conditions[0])
+        time_start = datetime.datetime.strptime(
+            str_start, '%Y-%m-%d %H:%M:%S')
+        prev_point = self._get_closest_point('prev', table_name, time_start)
+
+        str_end = stmt_parser.get_first_time_from_string(time_conditions[1])
+        time_end = datetime.datetime.strptime(
+            str_end, '%Y-%m-%d %H:%M:%S')
+        next_point = self._get_closest_point('next', table_name, time_end)
+
+        stmt_range = (
+            f"SELECT timestamp, value FROM {table_name} "
+            f"  WHERE timestamp > '{str_start}'"
+            f"  AND timestamp < '{str_end}'"
+            f"  ORDER BY timestamp ASC"
+        )
+        super().execute(stmt_range)
+
+        points_generator = self._generator_from_super_class_fetchone(
+            prev_point=prev_point, next_point=next_point)
+
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            [time_start, time_end], points_generator)
+
+    def _generator_from_super_class_fetchone(self, prev_point: DataPoint,
+                                             next_point: DataPoint):
+        if prev_point:
+            yield prev_point
+        row = super().fetchone()
+        while row is not None:
+            yield DataPoint(*row)
+            row = super().fetchone()
+        if next_point:
+            yield next_point
 
     def _create_dev_margin_table_if_not_exists(self):
         stmt_creat_table = (
