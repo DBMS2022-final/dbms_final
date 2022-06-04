@@ -1,6 +1,6 @@
 import datetime
 import re
-from typing import Dict
+from typing import Dict, Optional
 
 from mysql.connector.cursor import MySQLCursor
 
@@ -67,7 +67,7 @@ class Cursor(MySQLCursor):
             raise Exception("Insertion should only contain two values")
 
         time_stamp = matched.group(1)
-        val = matched.group(4)
+        val = float(matched.group(4))
         input_time = datetime.datetime.strptime(
             time_stamp, "%Y-%m-%d %H:%M:%S")
 
@@ -192,3 +192,32 @@ class Cursor(MySQLCursor):
             "VALUES (%s, %s);"
         )
         super().execute(stmt_insert_dev, (table_name, dev_margin))
+        return
+
+    def _get_closest_point(
+            self, prev_or_next: str, table_name: str,
+            specified_time: datetime.datetime) -> Optional[DataPoint]:
+
+        if prev_or_next == 'prev':
+            compare_sign = '<='
+            sort_order = 'DESC'
+        elif prev_or_next == 'next':
+            compare_sign = '>='
+            sort_order = 'ASC'
+        else:
+            error_message = (f"prev_or_next should be 'prev' or 'next', "
+                             f"get {prev_or_next}")
+            raise ValueError(error_message)
+
+        str_time = specified_time.strftime('%Y-%m-%d %H:%M:%S')
+        stmt_select_previous_point = (
+            f"SELECT timestamp, value FROM {table_name} "
+            f"WHERE timestamp {compare_sign} '{str_time}' "
+            f"ORDER BY timestamp {sort_order} LIMIT 1"
+        )
+        super().execute(stmt_select_previous_point)
+        result_row = super().fetchone()
+        if result_row:
+            return DataPoint(*result_row)
+        else:
+            return None
