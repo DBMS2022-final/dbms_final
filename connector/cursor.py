@@ -32,7 +32,7 @@ class Cursor(MySQLCursor):
             self._select_flag = True
             return self._custom_select(stmt)
         elif 'create table' in stmt:
-            return self._custum_create_table(stmt)
+            return self._custom_create_table(stmt)
         else:
             return super().execute(operation, params, multi)
 
@@ -90,29 +90,20 @@ class Cursor(MySQLCursor):
 
     def _custom_select(self, stmt: str):
         """
-        TODO
-        set self._select_flag = True
+
         store interpolated result from select_interpolation to
         self._selected_row_generator
         """
-        table_name = re.search(r"from\s(\w+)", stmt).group(1)
+        if ("<" in stmt
+                or ">" in stmt
+                or "where" not in stmt):
+            self._handle_select_many(stmt)
+        else:
+            self._handle_select_one(stmt)
 
-        test_point1 = DataPoint(datetime.datetime.now(), -999)
-        test_point2 = DataPoint(
-            datetime.datetime.now() + datetime.timedelta(minutes=8), -1999)
-
-        # TODO handle if table_name not in compression_dict.keys()
-        comp = self.compression_dict[table_name]
-        self._selected_row_generator = comp.select_interpolation(
-            datetime.datetime.now(),
-            [test_point1, test_point2])
-
-        return
-
-    def _custum_create_table(self, stmt: str):
+    def _custom_create_table(self, stmt: str):
         """
 
-        TODO
         Assume that dev_margin = xxx only appears at the last part
         seperated by a comma
         For example,
@@ -142,7 +133,7 @@ class Cursor(MySQLCursor):
                 break
             previous_comma_position -= 1
 
-        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end()]
+        modified_stmt = stmt[:previous_comma_position] + stmt[dev_match.end():]
         super().execute(modified_stmt)
 
     def _custom_fetchone(self):
@@ -157,6 +148,27 @@ class Cursor(MySQLCursor):
         result = [(pnt.timestamp, pnt.value)
                   for pnt in self._selected_row_generator]
         return result
+
+    def _handle_select_one(self, stmt):
+        # TODO
+        table_name = re.search(r"from\s(\w+)", stmt).group(1)
+
+        test_point1 = DataPoint(datetime.datetime.now(), -999)
+        test_point2 = DataPoint(
+            datetime.datetime.now() + datetime.timedelta(minutes=8), -1999)
+
+        # TODO if have time
+        # handle if table_name not in compression_dict.keys()
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            datetime.datetime.now(),
+            (test_point1, test_point2)
+        )
+
+    def _handle_select_many(self, stmt):
+        # TODO
+        self._selected_row_generator = (
+            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
     def _create_dev_margin_table_if_not_exists(self):
         stmt_creat_table = (

@@ -12,6 +12,13 @@ class DataPoint:
     def __repr__(self) -> str:
         return f"({self.strftime()}, {self.value})"
 
+    def __eq__(self, other) -> bool:
+        if (self.timestamp == other.timestamp
+                and abs(self.value - other.value) < 1e-5):
+            return True
+        else:
+            return False
+
 
 class Buffer:
     def __init__(self, archieved_point: DataPoint = None,
