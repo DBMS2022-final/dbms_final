@@ -93,8 +93,23 @@ class Compression:
             error_message = f"time_step({self.time_step}) is not recorded!"
             raise NotImplementedError(error_message)
 
+        if not end_time:
+            if not self.buffer.snapshot_point:
+                # TODO
+                raise NotImplementedError()
+            end_time = self.buffer.snapshot_point.timestamp
+
+            def add_point_to_tail():
+                nonlocal archieved_points
+                for pnt in archieved_points:
+                    yield pnt
+                yield self.buffer.snapshot_point
+
+            point_generator = add_point_to_tail()
+        else:
+            point_generator = archieved_points
+
         working_time = start_time
-        point_generator = archieved_points
         point_prev = next(point_generator)
         yield point_prev
 
