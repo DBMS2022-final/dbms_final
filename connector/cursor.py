@@ -147,10 +147,10 @@ class Cursor(MySQLCursor):
 
     def _custom_fetchall(self):
         assert self._select_flag
-
-        result = [(pnt.timestamp, pnt.value)
-                  for pnt in self._selected_row_generator]
+        
+        result = [(pnt.timestamp, pnt.value) for pnt in self._selected_row_generator]
         return result
+
 
     def _handle_select_one(self, stmt):
         table_name = re.search(r"from\s(\w+)", stmt).group(1)
@@ -159,25 +159,26 @@ class Cursor(MySQLCursor):
         selected_timestamp = re.search(select_pattern, stmt).group(1)
         
         if not selected_timestamp:
-            raise ValueError("The format of timestamp should be: 'Y-m-d H:M:S'")
+            raise ValueError("The format of query should be: ...where timestamp = 'Y-m-d H:M:S'")
 
         selected_timestamp = datetime.datetime.strptime(selected_timestamp, "%Y-%m-%d %H:%M:%S")
 
         """ Query the timestamp to see if it exist in DB """
         stmt_pre_query = (
-            f"SELECT timestamp, value" 
-            f"FROM {table_name}"
+            f"SELECT timestamp, value " 
+            f"FROM {table_name} "
             f"WHERE timestamp = '{selected_timestamp}'"
             )
         
         super().execute(stmt_pre_query)
-        result_tuple = super().fetchall()  
+        result_tuple = super().fetchone()  
 
         """the asked point does exist in DB"""
         if result_tuple:
-            self._selected_row_generator = (x for x in (result_tuple, ))
+            self._selected_row_generator = (x for x in (DataPoint(*result_tuple), ))
             return
         
+
         """the asked point does NOT exist"""
         lower_bound_point = self._get_closest_point('prev', table_name, selected_timestamp)
         upper_bound_point = self._get_closest_point('next', table_name, selected_timestamp)
