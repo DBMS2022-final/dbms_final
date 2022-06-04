@@ -153,7 +153,6 @@ class Cursor(MySQLCursor):
         return result
 
     def _handle_select_one(self, stmt):
-        # TODO
         table_name = re.search(r"from\s(\w+)", stmt).group(1)
 
         select_pattern = r"where\s+?timestamp\s+?=\s+?'((\w+-*)+\s(\w+:*)+)'"
@@ -190,7 +189,7 @@ class Cursor(MySQLCursor):
             (lower_bound_point, upper_bound_point)
         )
 
-        # TODO if have time
+        # TODO if have timeo
         # handle if table_name not in compression_dict.keys()
 
         ### why would we have to handle the table that does not exist?
