@@ -50,9 +50,13 @@ class Cursor(MySQLCursor):
             return super().fetchall()
 
     def _custom_insert(self, stmt: str):
-        # parse table name, first two column names
-        # call compression insert_checkout
-        # if return value is not num
+        """Handle insert statement if need compression
+
+        1. Parse table name, first two column names
+        2. Call compression insert_checkout
+        3. If return value is not None, save the return value
+           to database
+        """
         table_name = re.search(r"into\s(\w+)\s", stmt).group(1)
 
         col_time = 'timestamp'
@@ -193,10 +197,14 @@ class Cursor(MySQLCursor):
             selected_timestamp,
             (lower_bound_point, upper_bound_point)
         )
-        # TODO if have timeo
+        # TODO if have time
         # handle if table_name not in compression_dict.keys()
-
+        #
         # why would we have to handle the table that does not exist?
+        # case 1: table that do not need compression should be operated
+        #         as normal table as the original version of mysql
+        # case 2: the connector was closed and reconnected, compression
+        #         objected should be load from extra information table
 
     def _handle_select_many(self, stmt: str):
         """Handle select with a time range
@@ -281,7 +289,6 @@ class Cursor(MySQLCursor):
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
     def _handle_select_range(self, table_name: str, time_conditions: List[str]):
-        # TODO
         assert len(time_conditions) == 2
 
         str_start = stmt_parser.get_first_time_from_string(time_conditions[0])
