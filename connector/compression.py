@@ -99,17 +99,16 @@ class Compression:
                 raise NotImplementedError()
             end_time = self.buffer.snapshot_point.timestamp
 
-            def add_point_to_tail():
-                nonlocal archieved_points
-                pnt = None
-                for pnt in archieved_points:
-                    yield pnt
-                if pnt and pnt != self.buffer.snapshot_point:
-                    yield self.buffer.snapshot_point
+        def add_point_to_tail_if_needed():
+            nonlocal archieved_points
+            nonlocal end_time
+            pnt = None
+            for pnt in archieved_points:
+                yield pnt
+            if pnt and pnt.timestamp < end_time:
+                yield self.buffer.snapshot_point
 
-            point_generator = add_point_to_tail()
-        else:
-            point_generator = archieved_points
+        point_generator = add_point_to_tail_if_needed()
 
         point_prev = next(point_generator)
         if point_prev.timestamp >= start_time:
@@ -122,6 +121,10 @@ class Compression:
             while working_time < point_next.timestamp:
                 working_time += self.time_step
                 if working_time > end_time:
+                    # fetch remaining data contained in the generator, or the
+                    # next sql execute will raise unread result found error
+                    for _ in point_generator:
+                        pass
                     return
 
                 point_result = self._calc_interpolation(
