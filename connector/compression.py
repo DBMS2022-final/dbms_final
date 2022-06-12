@@ -1,5 +1,5 @@
 import datetime
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Generator
 
 from .data_structure import DataPoint, Buffer
 
@@ -40,10 +40,13 @@ class Compression:
             self._update_slope_interval(new_point)
             return save_point
 
-    def select_interpolation(self, specified_time, archieved_points: Tuple[DataPoint]):
-        """
+    def select_interpolation(self, specified_time,
+                             archieved_points: Tuple[DataPoint]
+                             ) -> Generator[DataPoint, None, None]:
+        """Do interpolation when SELECT
 
-        work as a generator
+        Work as a generator
+
         1. if only need one point
         specified_time: datetime.datetime
         archieved_points: a tuple of two Datapoints
@@ -56,7 +59,8 @@ class Compression:
         2. if a range
         specified_time: a tuple of two datetime.datetime
         archieved_points: a generator function of Datapoints
-        return: generator of DataPoint
+
+        Return: generator of DataPoint
         """
         if isinstance(specified_time, datetime.datetime):
             return self._select_one(specified_time, archieved_points)
@@ -64,7 +68,8 @@ class Compression:
             return self._select_many(specified_time, archieved_points)
 
     def _select_one(self, specified_time: datetime.datetime,
-                    archieved_points: Tuple[DataPoint]):
+                    archieved_points: Tuple[DataPoint]
+                    ) -> Generator[DataPoint, None, None]:
 
         assert len(archieved_points) >= 1
         if len(archieved_points) == 1:
@@ -85,7 +90,8 @@ class Compression:
         yield result_point
 
     def _select_many(self, specified_time: Tuple[datetime.datetime],
-                     archieved_points):
+                     archieved_points: Generator[DataPoint, None, None]
+                     ) -> Generator[DataPoint, None, None]:
         assert len(specified_time) == 2
         start_time, end_time = specified_time[0], specified_time[1]
 
@@ -99,7 +105,7 @@ class Compression:
                 raise NotImplementedError()
             end_time = self.buffer.snapshot_point.timestamp
 
-        def add_point_to_tail_if_needed():
+        def add_point_to_tail_if_needed() -> Generator[DataPoint, None, None]:
             nonlocal archieved_points
             nonlocal end_time
             pnt = None
@@ -110,7 +116,15 @@ class Compression:
 
         point_generator = add_point_to_tail_if_needed()
 
-        point_prev = next(point_generator)
+        try:
+            point_prev = next(point_generator)
+        except StopIteration:
+            # No datapoint in the database
+            return
+
+        if not start_time:
+            start_time = point_prev.timestamp
+
         if point_prev.timestamp >= start_time:
             working_time = point_prev.timestamp
             yield point_prev

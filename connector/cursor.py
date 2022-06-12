@@ -249,7 +249,7 @@ class Cursor(MySQLCursor):
         if len(time_conditions) == 2:  # case 1
             return self._handle_select_range(table_name, time_conditions)
 
-        if "<" in time_conditions:  # case 2
+        if "<" in time_conditions[0]:  # case 2
             return self._handle_select_before(table_name, time_conditions[0])
         else:  # case 3
             return self._handle_select_after(table_name, time_conditions[0])
@@ -271,7 +271,8 @@ class Cursor(MySQLCursor):
         super().execute(stmt_select_after)
 
         # The case (prev_point is None) is handled by
-        # self._generator_from_super_class_fetchone
+        # self._generator_from_super_class_fetchone and
+        # compression._select_many
         points_generator = self._generator_from_super_class_fetchone(
             prev_point=prev_point, next_point=None)
 
@@ -280,9 +281,25 @@ class Cursor(MySQLCursor):
             [time_start, None], points_generator)
 
     def _handle_select_before(self, table_name: str, time_condition: str):
-        # TODO: find the earliest time in database
-        self._selected_row_generator = (
-            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+        str_end = stmt_parser.get_first_time_from_string(time_condition)
+        time_end = datetime.datetime.strptime(
+            str_end, '%Y-%m-%d %H:%M:%S')
+        next_point = self._get_closest_point('next', table_name, time_end)
+
+        stmt_select_before = (
+            f"SELECT timestamp, value FROM {table_name} WHERE "
+            + time_condition + " ORDER BY timestamp ASC")
+        super().execute(stmt_select_before)
+
+        # The case (next_point is None) is handled by
+        # self._generator_from_super_class_fetchone and
+        # compression._select_many
+        points_generator = self._generator_from_super_class_fetchone(
+            prev_point=None, next_point=next_point)
+
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            [None, time_end], points_generator)
 
     def _handle_select_range(self, table_name: str, time_conditions: List[str]):
         assert len(time_conditions) == 2
