@@ -147,7 +147,11 @@ class Cursor(MySQLCursor):
     def _custom_fetchone(self):
         assert self._select_flag
 
-        next_point = next(self._selected_row_generator)
+        try:
+            next_point = next(self._selected_row_generator)
+        except StopIteration:
+            return None
+
         return next_point.timestamp, next_point.value
 
     def _custom_fetchall(self):
@@ -256,32 +260,24 @@ class Cursor(MySQLCursor):
             DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
 
     def _handle_select_after(self, table_name: str, time_condition: str):
-        # TODO
-        str_time = stmt_parser.get_first_time_from_string(time_condition)
-        specified_time = datetime.datetime.strptime(
-            str_time, '%Y-%m-%d %H:%M:%S')
-        next_point = self._get_closest_point(
-            'next', table_name, specified_time)
+        str_start = stmt_parser.get_first_time_from_string(time_condition)
+        time_start = datetime.datetime.strptime(
+            str_start, '%Y-%m-%d %H:%M:%S')
+        prev_point = self._get_closest_point('prev', table_name, time_start)
 
-        if not next_point:  # No data in the database
-            self._selected_row_generator = []
-
-        stmt_select_range = (
+        stmt_select_after = (
             f"SELECT timestamp, value FROM {table_name} WHERE "
             + time_condition + " ORDER BY timestamp ASC")
-        super().execute(stmt_select_range)
+        super().execute(stmt_select_after)
 
-        def points_generator(cursor):
-            row = super().fetchone()
-            while row is not None:
-                yield DataPoint(*row)
-                row = super().fetchone()
-            if next_point.timestamp != specified_time:
-                yield next_point
+        # The case (prev_point is None) is handled by
+        # self._generator_from_super_class_fetchone
+        points_generator = self._generator_from_super_class_fetchone(
+            prev_point=prev_point, next_point=None)
 
         comp = self.compression_dict[table_name]
         self._selected_row_generator = comp.select_interpolation(
-            [specified_time, None], points_generator(self))
+            [time_start, None], points_generator)
 
     def _handle_select_before(self, table_name: str, time_condition: str):
         # TODO: find the earliest time in database
@@ -303,8 +299,8 @@ class Cursor(MySQLCursor):
 
         stmt_range = (
             f"SELECT timestamp, value FROM {table_name} "
-            f"  WHERE timestamp > '{str_start}'"
-            f"  AND timestamp < '{str_end}'"
+            f"  WHERE {time_conditions[0]}"
+            f"  AND {time_conditions[1]}"
             f"  ORDER BY timestamp ASC"
         )
         super().execute(stmt_range)
@@ -373,36 +369,3 @@ class Cursor(MySQLCursor):
             return DataPoint(*result_row)
         else:
             return None
-
-    def _get_data_in_range(self, table_name: str,
-                           start_time: Optional[datetime.datetime],
-                           end_time: Optional[datetime.datetime]):
-        """Return a generator in the time range
-
-        Execute a select statement and wrap fetchall in to a generator
-        start_time and end_time cannot both be None
-        """
-        assert start_time or end_time
-
-        stmt_select_range = f"SELECT timestamp, value FROM {table_name} WHERE"
-        if start_time:
-            str_start = start_time.strftime('%Y-%m-%d %H:%M:%S')
-            stmt_select_range += f"  timestamp >= '{str_start}'"
-
-        if end_time:
-            str_end = end_time.strftime('%Y-%m-%d %H:%M:%S')
-            if start_time:
-                stmt_select_range += " AND"
-            stmt_select_range += f"  timestamp <= '{str_end}'"
-
-        stmt_select_range += f"  ORDER BY timestamp ASC"
-
-        super().execute(stmt_select_range)
-
-        def point_generator(cursor):
-            row = super().fetchone()
-            while row is not None:
-                yield DataPoint(*row)
-                row = super().fetchone()
-
-        return point_generator(self)
