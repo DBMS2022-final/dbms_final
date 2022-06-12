@@ -68,13 +68,16 @@ class Compression:
             return self._select_many(specified_time, archieved_points)
 
     def _select_one(self, specified_time: datetime.datetime,
-                    archieved_points: Tuple[DataPoint]
+                    saved_points: Tuple[DataPoint]
                     ) -> Generator[DataPoint, None, None]:
 
-        assert len(archieved_points) >= 1
-        if len(archieved_points) == 1:
+        archieved_points = list(saved_points)
+        assert len(archieved_points) == 2
+        assert archieved_points[0] is not None
+
+        if not archieved_points[1]:
             if self.buffer.snapshot_point:
-                archieved_points.append(self.buffer.snapshot_point)
+                archieved_points[1] = self.buffer.snapshot_point
             else:
                 error_message = ("only one point in the database and no data"
                                  " in the buffer are not implemented yet.")
@@ -84,6 +87,10 @@ class Compression:
             old_point, new_point = archieved_points[0], archieved_points[1]
         else:
             old_point, new_point = archieved_points[1], archieved_points[0]
+
+        if specified_time < old_point.timestamp or specified_time > new_point.timestamp:
+            # invalid specified time, return nothing
+            return
 
         result_point = self._calc_interpolation(
             specified_time, point_start=old_point, point_end=new_point)

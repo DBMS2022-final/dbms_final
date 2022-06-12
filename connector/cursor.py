@@ -161,6 +161,17 @@ class Cursor(MySQLCursor):
         return result
 
     def _handle_select_one(self, stmt):
+        """Save selected value as a generator to self._selected_row_generator
+
+        TODO if have time
+        handle if table_name not in compression_dict.keys()
+
+        why would we have to handle the table that does not exist?
+        case 1: table that do not need compression should be operated
+                as normal table as the original version of mysql
+        case 2: the connector was closed and reconnected, compression
+                objected should be load from extra information table
+        """
         table_name = re.search(r"from\s(\w+)", stmt).group(1)
 
         select_pattern = r"where\s+?timestamp\s+?=\s+?'((\w+-*)+\s(\w+:*)+)'"
@@ -192,6 +203,11 @@ class Cursor(MySQLCursor):
         """the asked point does NOT exist"""
         lower_bound_point = self._get_closest_point(
             'prev', table_name, selected_timestamp)
+        if not lower_bound_point:
+            # select timestamp before the earliest data
+            self._selected_row_generator = (_ for _ in [])
+            return
+
         upper_bound_point = self._get_closest_point(
             'next', table_name, selected_timestamp)
 
@@ -200,14 +216,6 @@ class Cursor(MySQLCursor):
             selected_timestamp,
             (lower_bound_point, upper_bound_point)
         )
-        # TODO if have time
-        # handle if table_name not in compression_dict.keys()
-        #
-        # why would we have to handle the table that does not exist?
-        # case 1: table that do not need compression should be operated
-        #         as normal table as the original version of mysql
-        # case 2: the connector was closed and reconnected, compression
-        #         objected should be load from extra information table
 
     def _handle_select_many(self, stmt: str):
         """Handle select with a time range
