@@ -99,7 +99,6 @@ class Cursor(MySQLCursor):
         store interpolated result from select_interpolation to
         self._selected_row_generator
         """
-        # TODO
         if ("<" in stmt
                 or ">" in stmt
                 or "where" not in stmt):
@@ -255,9 +254,16 @@ class Cursor(MySQLCursor):
             return self._handle_select_after(table_name, time_conditions[0])
 
     def _handle_select_no_time_limit(self, table_name: str):
-        # TODO: find the earliest time in database
-        self._selected_row_generator = (
-            DataPoint(datetime.datetime.now(), -999 * i) for i in range(3))
+        stmt_select_no_time_limit = (
+            f"SELECT timestamp, value FROM {table_name} "
+            "ORDER BY timestamp ASC")
+        super().execute(stmt_select_no_time_limit)
+        points_generator = self._generator_from_super_class_fetchone(
+            prev_point=None, next_point=None)
+
+        comp = self.compression_dict[table_name]
+        self._selected_row_generator = comp.select_interpolation(
+            [None, None], points_generator)
 
     def _handle_select_after(self, table_name: str, time_condition: str):
         str_start = stmt_parser.get_first_time_from_string(time_condition)

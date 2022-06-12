@@ -101,7 +101,11 @@ class Compression:
 
         if not end_time:
             if not self.buffer.snapshot_point:
-                # TODO
+                # TODO:
+                # case 1: no data, just return and end this function
+                # case 2: with data but the curor is closed and reconnect
+                #         this should be solved by initializing the
+                #         compression class when reconnect
                 raise NotImplementedError()
             end_time = self.buffer.snapshot_point.timestamp
 
