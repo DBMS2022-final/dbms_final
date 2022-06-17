@@ -47,8 +47,7 @@ stmt_create_table = (
     "CREATE TABLE voltage ("
     "  id int NOT NULL AUTO_INCREMENT PRIMARY KEY,"
     "  timestamp DATETIME,"
-    "  value DOUBLE,"
-    "  dev_margin=0.3"
+    "  value DOUBLE dev_margin=0.3"
     ");"
 )
 ourcursor.execute(stmt_create_table)

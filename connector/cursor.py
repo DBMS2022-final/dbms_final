@@ -115,8 +115,7 @@ class Cursor(MySQLCursor):
         CREATE TABLE temp (
             Id int NOT NULL AUTO_INCREMENT PRIMARY KEY,
             timestamp DATETIME,
-            value DOUBLE,
-            dev_margin=2.5
+            value DOUBLE dev_margin=2.5
         );
         """
         stmt_preprocess = stmt_parser.preprocessing(stmt)
@@ -133,14 +132,8 @@ class Cursor(MySQLCursor):
         self.compression_dict[table_name] = Compression(
             dev_margin=dev_value)
 
-        previous_comma_position = dev_match.start()
-        while previous_comma_position > 0:
-            if stmt_preprocess[previous_comma_position] == ',':
-                break
-            previous_comma_position -= 1
-
-        modified_stmt = stmt_preprocess[:previous_comma_position] + \
-            stmt_preprocess[dev_match.end():]
+        modified_stmt = (stmt_preprocess[:dev_match.start()] +
+                         stmt_preprocess[dev_match.end():])
         super().execute(modified_stmt)
 
     def _custom_fetchone(self):
